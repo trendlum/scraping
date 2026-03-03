@@ -87,9 +87,6 @@ def main() -> None:
         continue_on_error=True,
     )
 
-    for (name, _), eta_text in zip(rows, eta_values):
-        print(f"{name},{eta_text}")
-
     payload = _build_payload(
         rows=rows,
         eta_values=eta_values,
@@ -97,7 +94,6 @@ def main() -> None:
         output_columns=output_columns,
     )
     insert_eta_snapshot_in_supabase(table=output_table, payload=payload)
-    print(f"snapshot_inserted,{output_table}")
     print(f"elapsed_seconds,{perf_counter() - started_at:.2f}")
 
 
