@@ -3,25 +3,9 @@ from typing import Iterable, List, Optional
 
 from playwright.sync_api import Page, Playwright, sync_playwright
 
-XPATH_ETA = (
-    "//span[@data-testid='rich-text' and normalize-space()='Tiempo mínimo de llegada']"
-    "/ancestor::p[1]/preceding-sibling::p[1]"
-    "//span[@data-testid='rich-text']"
-)
-XPATH_ETA_BY_MAIN_LABELS = (
-    "//span[@data-testid='rich-text' and ("
-    "contains(translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'hora de entrega')"
-    " or contains(translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'tiempo mínimo de llegada')"
-    " or contains(translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'tiempo minimo de llegada')"
-    ")]/ancestor::p[1]/preceding-sibling::p[1]//span[@data-testid='rich-text']"
-)
-XPATH_ETA_BY_FLEX_LABELS = (
-    "//span[@data-testid='rich-text' and ("
-    "contains(translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'entrega')"
-    " or contains(translate(normalize-space(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'llegada')"
-    ")]/ancestor::p[1]/preceding-sibling::p[1]//span[@data-testid='rich-text']"
-)
-CONSENT_BUTTON_NAMES = ("Aceptar", "Aceptar todo", "Accept", "Accept all")
+PRIVATE_XPATHS_ENV_VAR = "STORE_ETA_PRIVATE_XPATHS"
+PRIVATE_CONSENT_ENV_VAR = "STORE_ETA_PRIVATE_CONSENT_BUTTONS"
+PRIVATE_LIST_SEPARATOR = "||"
 FAST_WAIT_MAX_MS = 7000
 ETA_ATTEMPT_MAX_MS = 4000
 OVERLAY_CHECK_TIMEOUT_MS = 250
@@ -34,6 +18,17 @@ def _is_debug_enabled() -> bool:
     return value in {"1", "true", "yes", "on"}
 
 
+def _load_private_list_env(name: str, required: bool) -> List[str]:
+    raw_value = os.getenv(name, "").strip()
+    values = [item.strip() for item in raw_value.split(PRIVATE_LIST_SEPARATOR) if item.strip()]
+    if required and not values:
+        raise ValueError(
+            f"Falta configuracion privada: {name}. "
+            f"Define valores separados por {PRIVATE_LIST_SEPARATOR!r}."
+        )
+    return values
+
+
 def _dump_debug_artifacts(page: Page) -> None:
     page.screenshot(path="debug_before_wait.png", full_page=True)
     with open("debug_before_wait.html", "w", encoding="utf-8") as handle:
@@ -42,8 +37,8 @@ def _dump_debug_artifacts(page: Page) -> None:
     print(page.title())
 
 
-def _dismiss_overlays(page: Page) -> None:
-    for name in CONSENT_BUTTON_NAMES:
+def _dismiss_overlays(page: Page, consent_labels: List[str]) -> None:
+    for name in consent_labels:
         try:
             button = page.get_by_role("button", name=name).first
             if button.is_visible(timeout=OVERLAY_CHECK_TIMEOUT_MS):
@@ -58,13 +53,12 @@ def _extract_visible_text(page: Page, xpath: str, timeout_ms: int) -> str:
     locator.wait_for(state="visible", timeout=timeout_ms)
     text = locator.inner_text().strip()
     if not text:
-        raise ValueError("Se encontró el contenedor ETA, pero sin texto visible.")
+        raise ValueError("Se encontro el contenedor ETA, pero sin texto visible.")
     return text
 
 
-def _extract_eta_text(page: Page, timeout_ms: int) -> str:
+def _extract_eta_text(page: Page, xpaths: List[str], timeout_ms: int) -> str:
     per_attempt_timeout_ms = max(1000, min(ETA_ATTEMPT_MAX_MS, timeout_ms))
-    xpaths = (XPATH_ETA, XPATH_ETA_BY_MAIN_LABELS, XPATH_ETA_BY_FLEX_LABELS)
     last_error: Optional[Exception] = None
     for xpath in xpaths:
         try:
@@ -74,7 +68,13 @@ def _extract_eta_text(page: Page, timeout_ms: int) -> str:
     raise ValueError("No se pudo extraer ETA visible.") from last_error
 
 
-def _scrape_eta_text(page: Page, url: str, timeout_ms: int) -> str:
+def _scrape_eta_text(
+    page: Page,
+    url: str,
+    timeout_ms: int,
+    xpaths: List[str],
+    consent_labels: List[str],
+) -> str:
     page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
     if _is_debug_enabled():
         _dump_debug_artifacts(page)
@@ -85,8 +85,8 @@ def _scrape_eta_text(page: Page, url: str, timeout_ms: int) -> str:
         )
     except Exception:
         pass
-    _dismiss_overlays(page)
-    return _extract_eta_text(page, timeout_ms=timeout_ms)
+    _dismiss_overlays(page, consent_labels=consent_labels)
+    return _extract_eta_text(page, xpaths=xpaths, timeout_ms=timeout_ms)
 
 
 def _create_browser_context(playwright: Playwright, headless: bool):
@@ -108,6 +108,9 @@ def get_store_eta_texts(
     continue_on_error: bool = False,
 ) -> List[str]:
     urls_list = list(urls)
+    xpaths = _load_private_list_env(PRIVATE_XPATHS_ENV_VAR, required=True)
+    consent_labels = _load_private_list_env(PRIVATE_CONSENT_ENV_VAR, required=False)
+
     with sync_playwright() as playwright:
         browser, context = _create_browser_context(playwright, headless=headless)
         try:
@@ -116,7 +119,15 @@ def get_store_eta_texts(
                 results: List[str] = []
                 for url in urls_list:
                     try:
-                        results.append(_scrape_eta_text(page, url=url, timeout_ms=timeout_ms))
+                        results.append(
+                            _scrape_eta_text(
+                                page,
+                                url=url,
+                                timeout_ms=timeout_ms,
+                                xpaths=xpaths,
+                                consent_labels=consent_labels,
+                            )
+                        )
                     except Exception as exc:
                         if continue_on_error:
                             results.append(f"ERROR: {exc}")
