@@ -3,12 +3,27 @@ name: Scrape ETA API
 on:
   repository_dispatch:
     types: [scrape_eta]
+
   workflow_dispatch:
+    inputs:
+      source:
+        description: "Trigger source"
+        required: false
+        default: "manual"
+      ts:
+        description: "ISO timestamp"
+        required: false
+        default: ""
+
+concurrency:
+  group: scrape-eta
+  cancel-in-progress: false
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+
     env:
       SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
       SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
@@ -23,15 +38,26 @@ jobs:
       STORE_ETA_DEBUG: ${{ vars.STORE_ETA_DEBUG }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
 
-      - run: pip install -e .
+      - name: Install package
+        run: pip install -e .
 
-      - run: python -m playwright install --with-deps chromium
+      - name: Install Playwright Chromium
+        run: python -m playwright install --with-deps chromium
 
-      - run: python src/store_eta/__main__.py
+      - name: Log trigger info
+        run: |
+          echo "Triggered by: ${{ github.event_name }}"
+          echo "Source: ${{ github.event.inputs.source }}"
+          echo "Timestamp: ${{ github.event.inputs.ts }}"
+
+      - name: Run scraper
+        run: python src/store_eta/__main__.py
