@@ -36,6 +36,8 @@ jobs:
       SCRAPER_HEADFUL: ${{ vars.SCRAPER_HEADFUL }}
       SCRAPER_TIMEOUT_MS: ${{ vars.SCRAPER_TIMEOUT_MS }}
       STORE_ETA_DEBUG: ${{ vars.STORE_ETA_DEBUG }}
+      STORE_ETA_PRIVATE_XPATHS: ${{ secrets.STORE_ETA_PRIVATE_XPATHS || vars.STORE_ETA_PRIVATE_XPATHS }}
+      STORE_ETA_PRIVATE_CONSENT_BUTTONS: ${{ secrets.STORE_ETA_PRIVATE_CONSENT_BUTTONS || vars.STORE_ETA_PRIVATE_CONSENT_BUTTONS }}
 
     steps:
       - name: Checkout repo
@@ -58,6 +60,15 @@ jobs:
           echo "Triggered by: ${{ github.event_name }}"
           echo "Source: ${{ github.event.inputs.source }}"
           echo "Timestamp: ${{ github.event.inputs.ts }}"
+
+      - name: Validate required env
+        run: |
+          if [ -z "${STORE_ETA_PRIVATE_XPATHS}" ]; then
+            echo "ERROR: STORE_ETA_PRIVATE_XPATHS is empty or not available in this run."
+            echo "Check repo/org secrets or vars and event permissions."
+            exit 1
+          fi
+          echo "STORE_ETA_PRIVATE_XPATHS loaded (length: ${#STORE_ETA_PRIVATE_XPATHS})"
 
       - name: Run scraper
         run: python src/store_eta/__main__.py
