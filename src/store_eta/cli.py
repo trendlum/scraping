@@ -16,7 +16,11 @@ Row = Tuple[str, str]
 
 
 def _get_env(name: str, default: str = "") -> str:
-    return os.getenv(name, default).strip()
+    value = os.getenv(name)
+    if value is None:
+        return default.strip()
+    cleaned = value.strip()
+    return cleaned if cleaned else default.strip()
 
 
 def _parse_bool_env(name: str, default: bool) -> bool:
