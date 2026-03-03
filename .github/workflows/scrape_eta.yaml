@@ -23,20 +23,15 @@ jobs:
       STORE_ETA_DEBUG: ${{ vars.STORE_ETA_DEBUG }}
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Install project dependencies
-        run: pip install -e .
+      - run: pip install -e .
 
-      - name: Install Playwright Chromium
-        run: python -m playwright install --with-deps chromium
+      - run: python -m playwright install --with-deps chromium
 
-      - name: Run scraper
-        run: python src/store_eta/__main__.py
+      - run: python src/store_eta/__main__.py
