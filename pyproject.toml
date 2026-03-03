@@ -1,0 +1,25 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "store-eta"
+version = "0.1.0"
+description = "Scraper minimo para extraer ETA de una tienda"
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "playwright",
+    "python-dotenv",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+]
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
