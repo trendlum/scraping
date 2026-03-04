@@ -58,8 +58,8 @@ jobs:
       - name: Log trigger info
         run: |
           echo "Triggered by: ${{ github.event_name }}"
-          echo "Source: ${{ github.event.inputs.source }}"
-          echo "Timestamp: ${{ github.event.inputs.ts }}"
+          echo "Source: ${{ github.event.inputs.source || github.event.client_payload.source || 'unknown' }}"
+          echo "Timestamp: ${{ github.event.inputs.ts || github.event.client_payload.ts || '' }}"
 
       - name: Validate required env
         run: |
