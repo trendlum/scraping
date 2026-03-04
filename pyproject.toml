@@ -11,6 +11,7 @@ requires-python = ">=3.9"
 dependencies = [
     "playwright",
     "python-dotenv",
+    "requests",
 ]
 
 [project.optional-dependencies]

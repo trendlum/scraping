@@ -1,0 +1,100 @@
+name: Scrape top 4 Polymarket events
+
+on:
+  schedule:
+    - cron: "0 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: scrape-polymarket-hourly
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  scrape-polymarket:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Install package
+        run: pip install -e .
+
+      - name: Create .env from secrets
+        env:
+          POLY_DOTENV: ${{ secrets.POLY_DOTENV }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: |
+          if [ -z "${POLY_DOTENV}" ]; then
+            echo "ERROR: Missing secret POLY_DOTENV with full .env content."
+            exit 1
+          fi
+          if [ -z "${SUPABASE_URL}" ]; then
+            echo "ERROR: Missing secret SUPABASE_URL."
+            exit 1
+          fi
+          if [ -z "${SUPABASE_KEY}" ]; then
+            echo "ERROR: Missing secret SUPABASE_KEY."
+            exit 1
+          fi
+          printf '%s\n' "${POLY_DOTENV}" > .env
+          printf 'SUPABASE_URL=%s\n' "${SUPABASE_URL}" >> .env
+          printf 'SUPABASE_KEY=%s\n' "${SUPABASE_KEY}" >> .env
+
+      - name: Validate required .env variables
+        run: |
+          required_poly_vars=(
+            "POLY_SUPABASE_CATEGORIES_TABLE="
+            "POLY_SUPABASE_TOP_EVENTS_TABLE="
+            "POLY_GAMMA_CATEGORIES_URL="
+            "POLY_GAMMA_EVENTS_URL="
+            "POLY_EVENTS_PAGE_SIZE="
+            "POLY_TOP_EVENTS_COUNT="
+          )
+          for key in "${required_poly_vars[@]}"; do
+            if ! grep -q "^${key}" .env; then
+              echo "ERROR: Missing ${key} in POLY_DOTENV."
+              exit 1
+            fi
+          done
+
+          required_vars=(
+            "SUPABASE_URL="
+            "SUPABASE_KEY="
+          )
+          for key in "${required_vars[@]}"; do
+            if ! grep -q "^${key}" .env; then
+              echo "ERROR: Missing ${key} in generated .env."
+              exit 1
+            fi
+          done
+
+      - name: Show trigger
+        run: |
+          echo "Triggered by: ${{ github.event_name }}"
+
+      - name: Run Polymarket categories sync
+        run: python src/poly/list_polymarket_categories.py
+
+      - name: Run Polymarket top events sync
+        run: python src/poly/list_top4_polymarket_events.py
+
+      - name: Cleanup .env
+        if: always()
+        run: |
+          rm -f .env
+          if [ -f ".env" ]; then
+            echo "ERROR: .env cleanup failed."
+            exit 1
+          fi
