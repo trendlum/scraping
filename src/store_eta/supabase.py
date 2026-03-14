@@ -1,6 +1,7 @@
 import json
 import os
 import re
+import time
 import unicodedata
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -16,11 +17,30 @@ def _require_env(name: str) -> str:
     return value
 
 
+def _is_retryable_supabase_error(status_code: Optional[int], detail: str) -> bool:
+    detail_lower = (detail or "").lower()
+
+    if status_code in {500, 502, 503, 504}:
+        return True
+
+    retryable_patterns = [
+        "57014",  # statement timeout en postgres
+        "statement timeout",
+        "canceling statement due to statement timeout",
+        "temporarily unavailable",
+        "timeout",
+        "connection reset",
+    ]
+    return any(pattern in detail_lower for pattern in retryable_patterns)
+
+
 def _supabase_request(
     method: str,
     endpoint: str,
     supabase_key: str,
     body: Optional[Dict[str, object]] = None,
+    timeout_seconds: int = 60,
+    max_retries: int = 3,
 ) -> str:
     payload = None
     headers = {
@@ -28,20 +48,54 @@ def _supabase_request(
         "Authorization": f"Bearer {supabase_key}",
         "Accept": "application/json",
     }
+
     if body is not None:
         payload = json.dumps(body, ensure_ascii=False).encode("utf-8")
         headers["Content-Type"] = "application/json"
         headers["Prefer"] = "return=minimal"
 
-    request = Request(endpoint, headers=headers, data=payload, method=method)
-    try:
-        with urlopen(request, timeout=30) as response:
-            return response.read().decode("utf-8")
-    except HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise ValueError(f"Error HTTP de Supabase ({exc.code}): {detail}") from exc
-    except URLError as exc:
-        raise ValueError(f"No se pudo conectar a Supabase: {exc.reason}") from exc
+    backoff_seconds = [2, 5, 10]
+
+    for attempt in range(1, max_retries + 1):
+        request = Request(endpoint, headers=headers, data=payload, method=method)
+
+        try:
+            with urlopen(request, timeout=timeout_seconds) as response:
+                return response.read().decode("utf-8")
+
+        except HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            retryable = _is_retryable_supabase_error(exc.code, detail)
+
+            print(
+                f"[supabase] HTTPError intento {attempt}/{max_retries} "
+                f"status={exc.code} endpoint={endpoint} detail={detail}"
+            )
+
+            if retryable and attempt < max_retries:
+                sleep_for = backoff_seconds[min(attempt - 1, len(backoff_seconds) - 1)]
+                print(f"[supabase] Reintentando en {sleep_for}s...")
+                time.sleep(sleep_for)
+                continue
+
+            raise ValueError(f"Error HTTP de Supabase ({exc.code}): {detail}") from exc
+
+        except URLError as exc:
+            reason = str(exc.reason)
+            print(
+                f"[supabase] URLError intento {attempt}/{max_retries} "
+                f"endpoint={endpoint} reason={reason}"
+            )
+
+            if attempt < max_retries:
+                sleep_for = backoff_seconds[min(attempt - 1, len(backoff_seconds) - 1)]
+                print(f"[supabase] Reintentando en {sleep_for}s...")
+                time.sleep(sleep_for)
+                continue
+
+            raise ValueError(f"No se pudo conectar a Supabase: {reason}") from exc
+
+    raise ValueError("No se pudo completar la petición a Supabase tras varios intentos.")
 
 
 def load_name_url_rows_from_supabase(
@@ -149,4 +203,19 @@ def insert_eta_snapshot_in_supabase(table: str, payload: Dict[str, str]) -> None
     supabase_url = _require_env("SUPABASE_URL").rstrip("/")
     supabase_key = _require_env("SUPABASE_KEY")
     endpoint = f"{supabase_url}/rest/v1/{table}"
-    _supabase_request(method="POST", endpoint=endpoint, supabase_key=supabase_key, body=payload)
+
+    print(
+        "[supabase] Insertando snapshot "
+        f"table={table} "
+        f"captured_at={payload.get('captured_at')} "
+        f"columns={sorted(payload.keys())}"
+    )
+
+    _supabase_request(
+        method="POST",
+        endpoint=endpoint,
+        supabase_key=supabase_key,
+        body=payload,
+        timeout_seconds=60,
+        max_retries=3,
+    )
