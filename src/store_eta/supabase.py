@@ -17,6 +17,14 @@ def _require_env(name: str) -> str:
     return value
 
 
+def _require_store_eta_supabase_env(kind: str) -> str:
+    if kind == "url":
+        return _require_env("SUPABASE_URL_DI")
+    if kind == "key":
+        return _require_env("SUPABASE_KEY_DI")
+    raise ValueError(f"Tipo de credencial Supabase no soportado: {kind}")
+
+
 def _is_retryable_supabase_error(status_code: Optional[int], detail: str) -> bool:
     detail_lower = (detail or "").lower()
 
@@ -106,8 +114,8 @@ def load_name_url_rows_from_supabase(
     if not table.strip():
         raise ValueError("Debes indicar el nombre de tabla de Supabase.")
 
-    supabase_url = _require_env("SUPABASE_URL").rstrip("/")
-    supabase_key = _require_env("SUPABASE_KEY")
+    supabase_url = _require_store_eta_supabase_env("url").rstrip("/")
+    supabase_key = _require_store_eta_supabase_env("key")
     select_value = f"{quote(name_column, safe='')},{quote(url_column, safe='')}"
     endpoint = f"{supabase_url}/rest/v1/{table}?select={select_value}"
 
@@ -200,8 +208,8 @@ def insert_eta_snapshot_in_supabase(table: str, payload: Dict[str, str]) -> None
     if not table.strip():
         raise ValueError("Debes indicar el nombre de tabla destino.")
 
-    supabase_url = _require_env("SUPABASE_URL").rstrip("/")
-    supabase_key = _require_env("SUPABASE_KEY")
+    supabase_url = _require_store_eta_supabase_env("url").rstrip("/")
+    supabase_key = _require_store_eta_supabase_env("key")
     endpoint = f"{supabase_url}/rest/v1/{table}"
 
     print(
