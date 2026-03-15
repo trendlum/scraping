@@ -25,8 +25,8 @@ jobs:
     timeout-minutes: 10
 
     env:
-      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-      SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+      SUPABASE_URL_DI: ${{ secrets.SUPABASE_URL_DI }}
+      SUPABASE_KEY_DI: ${{ secrets.SUPABASE_KEY_DI }}
       SUPABASE_SOURCE_TABLE: ${{ vars.SUPABASE_SOURCE_TABLE }}
       SUPABASE_SOURCE_NAME_COLUMN: ${{ vars.SUPABASE_SOURCE_NAME_COLUMN }}
       SUPABASE_SOURCE_URL_COLUMN: ${{ vars.SUPABASE_SOURCE_URL_COLUMN }}
@@ -63,6 +63,16 @@ jobs:
 
       - name: Validate required env
         run: |
+          if [ -z "${SUPABASE_URL_DI}" ]; then
+            echo "ERROR: SUPABASE_URL_DI is empty or not available in this run."
+            echo "Check repo/org secrets or environment secrets."
+            exit 1
+          fi
+          if [ -z "${SUPABASE_KEY_DI}" ]; then
+            echo "ERROR: SUPABASE_KEY_DI is empty or not available in this run."
+            echo "Check repo/org secrets or environment secrets."
+            exit 1
+          fi
           if [ -z "${STORE_ETA_PRIVATE_XPATHS}" ]; then
             echo "ERROR: STORE_ETA_PRIVATE_XPATHS is empty or not available in this run."
             echo "Check repo/org secrets or vars and event permissions."
