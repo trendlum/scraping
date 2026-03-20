@@ -1,3 +1,4 @@
+import json
 import os
 from typing import Any, Dict, List, Optional
 
@@ -135,6 +136,28 @@ def _as_int(value: Any) -> Optional[int]:
         return None
 
 
+def _extract_buy_yes(event: Dict[str, Any]) -> float:
+    markets = event.get("markets")
+    if not isinstance(markets, list) or not markets:
+        return 0.0
+
+    first_market = markets[0]
+    if not isinstance(first_market, dict):
+        return 0.0
+
+    outcome_prices = first_market.get("outcomePrices")
+    if isinstance(outcome_prices, str):
+        try:
+            outcome_prices = json.loads(outcome_prices)
+        except json.JSONDecodeError:
+            return 0.0
+
+    if not isinstance(outcome_prices, list) or not outcome_prices:
+        return 0.0
+
+    return _as_float(outcome_prices[0])
+
+
 def select_top_events_for_categories(
     polymarket_events_url: str,
     events_page_size: int,
@@ -169,6 +192,8 @@ def select_top_events_for_categories(
                 "active": bool(event.get("active")),
                 "closed": bool(event.get("closed")),
                 "resolutionSource": event.get("resolutionSource"),
+                "icon": event.get("icon"),
+                "buy_yes": _extract_buy_yes(event),
                 "liquidity": _as_float(event.get("liquidity")),
                 "volume": _as_float(event.get("volume")),
                 "openInterest": _as_float(event.get("openInterest")),
