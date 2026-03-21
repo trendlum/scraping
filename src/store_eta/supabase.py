@@ -19,9 +19,9 @@ def _require_env(name: str) -> str:
 
 def _require_store_eta_supabase_env(kind: str) -> str:
     if kind == "url":
-        return _require_env("SUPABASE_URL_DI")
+        return os.getenv("SUPABASE_URL", "").strip() or _require_env("SUPABASE_URL_DI")
     if kind == "key":
-        return _require_env("SUPABASE_KEY_DI")
+        return os.getenv("SUPABASE_KEY", "").strip() or _require_env("SUPABASE_KEY_DI")
     raise ValueError(f"Tipo de credencial Supabase no soportado: {kind}")
 
 
